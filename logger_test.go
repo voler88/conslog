@@ -2,6 +2,7 @@ package logging_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"regexp"
 	"slices"
 	"strings"
@@ -114,5 +115,47 @@ func TestSetLevel(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestWith verifies that key-value attributes are added to log output.
+func TestWith(t *testing.T) {
+	var buf bytes.Buffer
+	l := logging.New(&buf, "default").With("user", "alice", "team", "red")
+	l.Error("with attributes")
+
+	var logLine map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &logLine); err != nil {
+		t.Fatalf("failed to parse log line: %v", err)
+	}
+
+	if logLine["user"] != "alice" {
+		t.Errorf("expected user 'alice', got: %v", logLine["user"])
+	}
+	if logLine["team"] != "red" {
+		t.Errorf("expected team 'red', got: %v", logLine["team"])
+	}
+}
+
+// TestWithGroup verifies that attributes are grouped under the specified name.
+func TestWithGroup(t *testing.T) {
+	var buf bytes.Buffer
+	l := logging.New(&buf, "default").WithGroup("session").With("id", "abc123", "status", "active")
+	l.Error("grouped attributes")
+
+	var logLine map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &logLine); err != nil {
+		t.Fatalf("failed to parse log line: %v", err)
+	}
+
+	group, ok := logLine["session"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected 'session' to be a group object, got: %v", logLine["session"])
+	}
+	if group["id"] != "abc123" {
+		t.Errorf("expected session.id = 'abc123', got: %v", group["id"])
+	}
+	if group["status"] != "active" {
+		t.Errorf("expected session.status = 'active', got: %v", group["status"])
 	}
 }

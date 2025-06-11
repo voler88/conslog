@@ -48,3 +48,17 @@ func (l *Logger) SetLevel(i int) error {
 	}
 	return l.Level.UnmarshalText([]byte(s))
 }
+
+// With returns a [Logger] with the provided key-value pairs added to the context.
+// These values will be included in all subsequent log entries.
+func (l *Logger) With(args ...any) *Logger {
+	l.Logger = l.Logger.With(args...)
+	return l
+}
+
+// WithGroup returns a [Logger] that creates a named group for the log attributes.
+// All key-value pairs added after will be nested under the group name.
+func (l *Logger) WithGroup(name string) *Logger {
+	l.Logger = l.Logger.WithGroup(name)
+	return l
+}
