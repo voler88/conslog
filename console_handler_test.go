@@ -1,4 +1,4 @@
-package logging_test
+package conslog_test
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"testing/slogtest"
 	"time"
 
-	"github.com/voler88/logging"
+	"github.com/voler88/conslog"
 )
 
 const timeFormat = "[15:04:05.000]"
@@ -47,7 +47,7 @@ func parseLogEntryHeader(t *testing.T, line string) map[string]any {
 
 func TestSlogtest(t *testing.T) {
 	var buf bytes.Buffer
-	err := slogtest.TestHandler(logging.NewConsoleHandler(&buf, nil), func() []map[string]any {
+	err := slogtest.TestHandler(conslog.NewConsoleHandler(&buf, nil), func() []map[string]any {
 		var entries []map[string]any
 		var groupKeys []string
 		expectedIndent := 2

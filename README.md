@@ -1,4 +1,4 @@
-# Logging with Go's slog
+# Conslog
 
 This Go package provides a customizable logger based on Go's standard
 [`slog`](https://pkg.go.dev/log/slog) package. It supports two output modes:

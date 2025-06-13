@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/voler88/logging"
+	"github.com/voler88/conslog/examples/logging"
 )
 
 // TestHandlerTypeValidation verifies [logging.HandlerType.IsValid] and string constants.

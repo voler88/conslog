@@ -1,10 +1,10 @@
-package logging_test
+package conslog_test
 
 import (
 	"bytes"
 	"testing"
 
-	"github.com/voler88/logging"
+	"github.com/voler88/conslog/examples/logging"
 )
 
 // BenchmarkLoggingJSON benchmarks logging performance using the JSON handler.

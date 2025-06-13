@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/voler88/conslog"
 )
 
 // Level defines a custom log level type based on [slog.Level].
@@ -58,7 +60,7 @@ func New(out io.Writer, handler HandlerType) *Logger {
 	var h slog.Handler
 	switch handler {
 	case Console:
-		h = NewConsoleHandler(out, opts)
+		h = conslog.NewConsoleHandler(out, opts)
 	case Text:
 		h = slog.NewTextHandler(out, opts)
 	case JSON:
