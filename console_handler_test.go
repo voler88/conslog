@@ -17,6 +17,7 @@ var colorRe = regexp.MustCompile(`\033\[\d+m(.+)\033\[0m\s*`)
 
 // uncolorize removes color formatting from a given string.
 func uncolorize(t *testing.T, s string) string {
+	t.Helper()
 	us := colorRe.FindStringSubmatch(s)
 	if us == nil {
 		t.Fatalf("failed to remove colorization from string: %s", s)
@@ -27,6 +28,7 @@ func uncolorize(t *testing.T, s string) string {
 // parseLogEntryHeader processes a line with indent level 0 as a new log entry,
 // extracting the time, level, and message.
 func parseLogEntryHeader(t *testing.T, line string) map[string]any {
+	t.Helper()
 	entry := make(map[string]any)
 	line = strings.TrimSpace(line)
 	first, rest, _ := strings.Cut(line, " ")
@@ -52,8 +54,8 @@ func TestSlogtest(t *testing.T) {
 		var groupKeys []string
 		expectedIndent := 2
 
-		lines := bytes.Split(buf.Bytes(), []byte{'\n'})
-		for _, lineBytes := range lines {
+		lines := bytes.SplitSeq(buf.Bytes(), []byte{'\n'})
+		for lineBytes := range lines {
 			if len(lineBytes) == 0 {
 				continue // skip empty lines
 			}
