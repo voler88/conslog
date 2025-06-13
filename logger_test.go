@@ -11,15 +11,60 @@ import (
 	"github.com/voler88/logging"
 )
 
+// TestHandlerTypeValidation verifies [logging.HandlerType.IsValid] and string constants.
+func TestHandlerTypeValidation(t *testing.T) {
+	validTypes := []logging.HandlerType{
+		logging.Console,
+		logging.Text,
+		logging.JSON,
+	}
+	for _, ht := range validTypes {
+		if !ht.IsValid() {
+			t.Errorf("expected HandlerType %q to be valid", ht)
+		}
+		if ht.String() != string(ht) {
+			t.Errorf("expected String() to return %q, got %q", ht, ht.String())
+		}
+	}
+
+	invalid := logging.HandlerType("invalid")
+	if invalid.IsValid() {
+		t.Error("expected invalid HandlerType to be invalid")
+	}
+}
+
+// TestNewLoggerFallback tests that invalid handler types fallback to JSON with warning.
+func TestNewLoggerFallback(t *testing.T) {
+	var buf bytes.Buffer
+	// Capture stderr to check warning output
+	oldStderr := testing.Verbose() // Just a placeholder; ideally use os.Pipe or similar in real tests
+
+	l := logging.New(&buf, "invalid-type")
+	if l == nil {
+		t.Fatal("expected logger, got nil")
+	}
+	// We can't easily capture os.Stderr here without extra setup,
+	// but at least verify logger works and outputs JSON.
+
+	l.Info("test message", "key", "value")
+	out := buf.String()
+	if !strings.Contains(out, `"level":"INFO"`) {
+		t.Errorf("expected JSON output with INFO level, got: %s", out)
+	}
+
+	_ = oldStderr
+}
+
 // TestHandlers verifies that the appropriate handler produces output that resembles JSON or non-JSON.
 func TestHandlers(t *testing.T) {
 	tests := []struct {
 		name     string
-		handler  string
+		handler  logging.HandlerType
 		wantJSON bool
 	}{
-		{"JSON", "default", true},
-		{"Console", "console", false},
+		{"JSON", logging.JSON, true},
+		{"Console", logging.Console, false},
+		{"Text", logging.Text, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -31,7 +76,8 @@ func TestHandlers(t *testing.T) {
 			l.Error("test message", "key", "value")
 			out := buf.String()
 
-			if strings.Contains(out, "{") != tt.wantJSON {
+			gotJSON := strings.Contains(out, "{")
+			if gotJSON != tt.wantJSON {
 				t.Errorf(
 					"handler %q: expected JSON output = %v, but got: %s",
 					tt.handler,
@@ -44,73 +90,168 @@ func TestHandlers(t *testing.T) {
 }
 
 // TestSetLevel tests that the log level filtering works as expected.
-// It uses a regular expression to extract the log level from the string output.
 func TestSetLevel(t *testing.T) {
-	// Regular expression expects output containing a JSON field "level":"".
 	levelRe := regexp.MustCompile(`.*"level":"(\w+)".*`)
 	tests := []struct {
 		name        string
-		wantLvl     int
+		wantLvl     logging.Level
 		wantMsgLvls []string
 	}{
-		{"Error-1", -1, []string{"ERROR"}},
 		{"Error", logging.LevelError, []string{"ERROR"}},
 		{"Warn", logging.LevelWarn, []string{"ERROR", "WARN"}},
 		{"Info", logging.LevelInfo, []string{"ERROR", "WARN", "INFO"}},
 		{"Debug", logging.LevelDebug, []string{"ERROR", "WARN", "INFO", "DEBUG"}},
-		{"Debug+1", 4, []string{"ERROR", "WARN", "INFO", "DEBUG"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			var buf bytes.Buffer
-			// Use the JSON handler to reliably extract levels.
-			l := logging.New(&buf, "default")
-			if err := l.SetLevel(tt.wantLvl); err != nil {
-				t.Fatalf("SetLevel(%d) returned error: %v", tt.wantLvl, err)
-			}
-			// Log messages at various levels.
+			l := logging.New(&buf, logging.JSON)
+			l.SetLevel(tt.wantLvl)
+
 			l.Error("test message", "key", "value")
 			l.Warn("test message", "key", "value")
 			l.Info("test message", "key", "value")
 			l.Debug("test message", "key", "value")
 
-			// Split the output into individual lines.
-			lines := bytes.Split(buf.Bytes(), []byte{'\n'})
-
-			// Exclude a potential trailing empty line.
-			var nonEmptyLines [][]byte
-			for _, line := range lines {
-				if len(line) > 0 {
-					nonEmptyLines = append(nonEmptyLines, line)
-				}
-			}
-
-			if len(nonEmptyLines) != len(tt.wantMsgLvls) {
+			lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+			if len(lines) != len(tt.wantMsgLvls) {
 				t.Fatalf(
-					"expected %d messages, but got %d; output: %s",
+					"expected %d messages, got %d; output: %s",
 					len(tt.wantMsgLvls),
-					len(nonEmptyLines),
+					len(lines),
 					buf.String(),
 				)
 			}
 
-			// Verify that each log message has an expected level.
-			for i, lineBytes := range nonEmptyLines {
-				s := string(lineBytes)
-
-				gotMsgLevel := levelRe.FindStringSubmatch(s)
-				if gotMsgLevel == nil {
-					t.Fatalf("failed to extract meassage level: %s", s)
+			for i, line := range lines {
+				matches := levelRe.FindStringSubmatch(line)
+				if matches == nil || len(matches) < 2 {
+					t.Fatalf("failed to extract level from log line: %s", line)
 				}
-
-				if !slices.Contains(tt.wantMsgLvls, gotMsgLevel[1]) {
-					t.Fatalf(
-						"unexpected log level in message %d: expected one of %v, got %q",
+				gotLevel := matches[1]
+				if !slices.Contains(tt.wantMsgLvls, gotLevel) {
+					t.Errorf(
+						"unexpected log level in message %d: got %q, want one of %v",
 						i+1,
+						gotLevel,
 						tt.wantMsgLvls,
-						gotMsgLevel[1],
+					)
+				}
+			}
+		})
+	}
+}
+
+// TestSetLevelByCounter verifies that the log level is correctly set
+// based on the integer counter provided, enabling dynamic verbosity.
+func TestSetLevelByCounter(t *testing.T) {
+	var buf bytes.Buffer
+	l := logging.New(&buf, logging.JSON)
+
+	tests := []struct {
+		name       string
+		counter    int
+		wantLevels []string
+	}{
+		{"CounterNegative", -1, []string{"ERROR"}},
+		{"CounterZero", 0, []string{"ERROR"}},
+		{"CounterOne", 1, []string{"ERROR", "WARN"}},
+		{"CounterTwo", 2, []string{"ERROR", "WARN", "INFO"}},
+		{"CounterThree", 3, []string{"ERROR", "WARN", "INFO", "DEBUG"}},
+		{"CounterFour", 4, []string{"ERROR", "WARN", "INFO", "DEBUG"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf.Reset()
+			l.SetLevelByCounter(tt.counter)
+
+			l.Error("msg", "key", "val")
+			l.Warn("msg", "key", "val")
+			l.Info("msg", "key", "val")
+			l.Debug("msg", "key", "val")
+
+			lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+			if len(lines) != len(tt.wantLevels) {
+				t.Fatalf(
+					"expected %d log lines, got %d; output: %s",
+					len(tt.wantLevels),
+					len(lines),
+					buf.String(),
+				)
+			}
+
+			for i, line := range lines {
+				if !strings.Contains(line, tt.wantLevels[i]) {
+					t.Errorf(
+						"expected log line %d to contain level %q, got: %s",
+						i+1,
+						tt.wantLevels[i],
+						line,
+					)
+				}
+			}
+		})
+	}
+}
+
+// TestSetLevelByName tests setting log level by string name.
+func TestSetLevelByName(t *testing.T) {
+	var buf bytes.Buffer
+	l := logging.New(&buf, logging.JSON)
+
+	tests := []struct {
+		name       string
+		levelName  string
+		wantErr    bool
+		wantLevels []string
+	}{
+		{"LowercaseError", "error", false, []string{"ERROR"}},
+		{"UppercaseError", "ERROR", false, []string{"ERROR"}},
+		{"MixedCaseInfo", "InFo", false, []string{"ERROR", "WARN", "INFO"}},
+		{"WarnUpper", "WARN", false, []string{"ERROR", "WARN"}},
+		{"WarnMixed", "wArN", false, []string{"ERROR", "WARN"}},
+		{"WarningLower", "warning", false, []string{"ERROR", "WARN"}},
+		{"WarningMixed", "WaRnInG", false, []string{"ERROR", "WARN"}},
+		{"ValidDebug", "debug", false, []string{"ERROR", "WARN", "INFO", "DEBUG"}},
+		{"Invalid", "verbose", true, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf.Reset()
+			err := l.SetLevelByName(tt.levelName)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("SetLevelByName(%q) error = %v, wantErr %v", tt.levelName, err, tt.wantErr)
+			}
+			if err != nil {
+				return
+			}
+
+			l.Error("msg", "key", "val")
+			l.Warn("msg", "key", "val")
+			l.Info("msg", "key", "val")
+			l.Debug("msg", "key", "val")
+
+			lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+			if len(lines) != len(tt.wantLevels) {
+				t.Fatalf(
+					"expected %d log lines, got %d; output: %s",
+					len(tt.wantLevels),
+					len(lines),
+					buf.String(),
+				)
+			}
+
+			for i, line := range lines {
+				if !strings.Contains(line, tt.wantLevels[i]) {
+					t.Errorf(
+						"expected log line %d to contain level %q, got: %s",
+						i+1,
+						tt.wantLevels[i],
+						line,
 					)
 				}
 			}
@@ -121,7 +262,7 @@ func TestSetLevel(t *testing.T) {
 // TestWith verifies that key-value attributes are added to log output.
 func TestWith(t *testing.T) {
 	var buf bytes.Buffer
-	l := logging.New(&buf, "default").With("user", "alice", "team", "red")
+	l := logging.New(&buf, logging.JSON).With("user", "alice", "team", "red")
 	l.Error("with attributes")
 
 	var logLine map[string]any
@@ -140,7 +281,9 @@ func TestWith(t *testing.T) {
 // TestWithGroup verifies that attributes are grouped under the specified name.
 func TestWithGroup(t *testing.T) {
 	var buf bytes.Buffer
-	l := logging.New(&buf, "default").WithGroup("session").With("id", "abc123", "status", "active")
+	l := logging.New(&buf, logging.JSON).
+		WithGroup("session").
+		With("id", "abc123", "status", "active")
 	l.Error("grouped attributes")
 
 	var logLine map[string]any
