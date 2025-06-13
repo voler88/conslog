@@ -1,3 +1,3 @@
 module github.com/voler88/logging
 
-go 1.23.9
+go 1.24.4
