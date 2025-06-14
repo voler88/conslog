@@ -394,5 +394,8 @@ func TestPanicOnInvalidType(t *testing.T) {
 	pc, _, _, _ := runtime.Caller(0)
 	r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", pc)
 	r.AddAttrs(slog.Any("bad", make(chan int))) // channel cannot be marshaled to JSON
-	h.Handle(context.Background(), r)
+	err := h.Handle(context.Background(), r)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
 }

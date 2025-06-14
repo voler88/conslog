@@ -127,7 +127,7 @@ func TestSetLevel(t *testing.T) {
 
 			for i, line := range lines {
 				matches := levelRe.FindStringSubmatch(line)
-				if matches == nil || len(matches) < 2 {
+				if len(matches) < 2 {
 					t.Fatalf("failed to extract level from log line: %s", line)
 				}
 				gotLevel := matches[1]
