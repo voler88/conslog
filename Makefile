@@ -21,5 +21,5 @@ clean:
 	rm -rf $(COVERAGE)
 
 test:
-	GOMAXPROCS=$(BENCH_PROCS) $(GOTEST) -v -bench=. -benchmem -count $(BENCH_COUNT) -coverprofile $(COVERAGE) ./...
+	GOMAXPROCS=$(BENCH_PROCS) $(GOTEST) -race -v -bench=. -benchmem -count $(BENCH_COUNT) -coverprofile $(COVERAGE) ./...
 	$(GOCOVER) -func=$(COVERAGE)

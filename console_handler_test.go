@@ -3,6 +3,7 @@ package conslog_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"runtime"
@@ -26,6 +27,8 @@ const (
 	lightBlue    = 94
 	lightMagenta = 95
 	white        = 97
+
+	maxIndent = 30
 )
 
 // ansi returns the ANSI escape sequence for a given color code.
@@ -33,17 +36,10 @@ func ansi(code int) string {
 	return "\033[" + strconv.Itoa(code) + "m"
 }
 
-// colorRe is used to remove ANSI color codes for easier parsing.
-var colorRe = regexp.MustCompile(`\033\[\d+m(.+?)\033\[0m\s*`)
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-// uncolorize removes ANSI color codes from a string.
-func uncolorize(t *testing.T, s string) string {
-	t.Helper()
-	us := colorRe.FindStringSubmatch(s)
-	if us == nil {
-		t.Fatalf("failed to remove colorization from string: %q", s)
-	}
-	return us[1]
+func uncolorize(_ *testing.T, s string) string {
+	return ansiRe.ReplaceAllString(s, "")
 }
 
 // parseLogEntryHeader parses a log entry header (time, level, message).
@@ -54,6 +50,7 @@ func parseLogEntryHeader(t *testing.T, line string) map[string]any {
 	first, rest, _ := strings.Cut(line, " ")
 	cleanFirst := uncolorize(t, first)
 
+	// try to parse time; if valid, first token is time
 	if parsedTime, err := time.Parse(timeFormat, cleanFirst); err == nil {
 		entry["time"] = parsedTime.Local().Format(time.RFC3339)
 		level, msg, _ := strings.Cut(rest, " ")
@@ -71,21 +68,22 @@ func parseLogLines(t *testing.T, lines [][]byte) []map[string]any {
 	t.Helper()
 	var entries []map[string]any
 	var groupKeys []string
-	expectedIndent := 2
+	var expectedIndent int
 
 	for _, lineBytes := range lines {
 		line := string(lineBytes)
-		line = strings.TrimRight(line, "\r\n")
-		if len(strings.TrimSpace(line)) == 0 {
-			continue
-		}
-
+		line = strings.TrimRight(uncolorize(t, line), "\r\n")
 		currentIndent := len(line) - len(strings.TrimLeft(line, " "))
 		if currentIndent%2 != 0 {
 			t.Fatalf("indentation must be even, got %d: %q", currentIndent, line)
 		}
+		line = strings.TrimSpace(line)
+		if len(line) == 0 {
+			continue // skip empty lines
+		}
 
 		if currentIndent == 0 {
+			// new top-level log entry
 			entry := parseLogEntryHeader(t, line)
 			entries = append(entries, entry)
 			expectedIndent = 2
@@ -93,19 +91,19 @@ func parseLogLines(t *testing.T, lines [][]byte) []map[string]any {
 			continue
 		}
 
+		// non-zero indent: groups or attributes
 		entry := entries[len(entries)-1]
 		if len(entry) == 0 {
 			t.Fatalf("log entry missing header for line: %q", line)
 		}
 
-		line = strings.TrimSpace(line)
-		line = uncolorize(t, line)
-
+		// adjust group keys stack if indent decreased
 		for currentIndent < expectedIndent && len(groupKeys) > 0 {
 			groupKeys = groupKeys[:len(groupKeys)-1]
 			expectedIndent -= 2
 		}
 
+		// traverse nested groups to find current map context
 		groupEntry := entry
 		for _, key := range groupKeys {
 			val, ok := groupEntry[key]
@@ -119,9 +117,12 @@ func parseLogLines(t *testing.T, lines [][]byte) []map[string]any {
 			groupEntry = nestedMap
 		}
 
+		// check if line is an attribute (key: value) or a new group (key:)
 		if key, value, ok := strings.Cut(line, ": "); ok {
+			// attribute line
 			groupEntry[key] = strings.Trim(value, `"`)
 		} else {
+			// new group line
 			trimmedKey := strings.TrimSuffix(line, ":")
 			groupKeys = append(groupKeys, trimmedKey)
 			groupEntry[trimmedKey] = make(map[string]any)
@@ -278,6 +279,12 @@ func TestAttributeHandling(t *testing.T) {
 			withAttrs: []slog.Attr{slog.Group("emptyGroup")},
 			notExpect: []string{"emptyGroup"},
 		},
+		{
+			name:      "NestedGroupsIndentation",
+			withGroup: "level1",
+			withAttrs: []slog.Attr{slog.String("key1", "val1")},
+			expect:    []string{"level1:", "  key1: \"val1\""},
+		},
 	}
 
 	for _, tc := range tests {
@@ -285,11 +292,9 @@ func TestAttributeHandling(t *testing.T) {
 			var buf bytes.Buffer
 			var h slog.Handler = conslog.NewConsoleHandler(&buf, nil)
 
-			// apply WithGroup if needed
 			if tc.withGroup != "" {
 				h = h.WithGroup(tc.withGroup)
 			}
-			// apply WithAttrs if needed
 			if len(tc.withAttrs) > 0 {
 				h = h.WithAttrs(tc.withAttrs)
 			}
@@ -299,21 +304,56 @@ func TestAttributeHandling(t *testing.T) {
 			if len(tc.addAttrs) > 0 {
 				r.AddAttrs(tc.addAttrs...)
 			}
-			h.Handle(context.Background(), r)
+
+			if err := h.Handle(context.Background(), r); err != nil {
+				t.Fatalf("Handle failed: %v", err)
+			}
 
 			output := buf.String()
+			plain := uncolorize(t, output)
+
 			for _, want := range tc.expect {
-				if !strings.Contains(output, want) {
-					t.Errorf("expected output to contain %q, got %q", want, output)
+				if !strings.Contains(plain, want) {
+					t.Errorf("expected output to contain %q, got %q", want, plain)
 				}
 			}
 			for _, notWant := range tc.notExpect {
-				if strings.Contains(output, notWant) {
-					t.Errorf("expected output NOT to contain %q, got %q", notWant, output)
+				if strings.Contains(plain, notWant) {
+					t.Errorf("expected output NOT to contain %q, got %q", notWant, plain)
 				}
 			}
 		})
 	}
+
+	// additional subtest to cover indentation with deep nesting beyond maxIndent
+	t.Run("IndentationCoverage", func(t *testing.T) {
+		var buf bytes.Buffer
+		h := conslog.NewConsoleHandler(&buf, nil)
+
+		// test indentation from 0 up to maxIndent + 5 to cover cache and fallback
+		for indentLevel := 0; indentLevel <= maxIndent+5; indentLevel++ {
+			h2 := h
+			for i := range indentLevel {
+				h2 = h2.WithGroup(fmt.Sprintf("g%d", i)).(*conslog.ConsoleHandler)
+			}
+
+			pc, _, _, _ := runtime.Caller(0)
+			r := slog.NewRecord(time.Now(), slog.LevelInfo, "indent test", pc)
+			r.AddAttrs(slog.String("key", "value"))
+
+			buf.Reset()
+			if err := h2.Handle(context.Background(), r); err != nil {
+				t.Fatalf("Handle failed: %v", err)
+			}
+
+			plain := uncolorize(t, buf.String())
+			expectedIndent := strings.Repeat(" ", indentLevel*2) + `key: "value"`
+			if !strings.Contains(plain, expectedIndent) {
+				t.Errorf("indentation test failed for indentLevel=%d; expected %q in output:\n%s",
+					indentLevel, expectedIndent, plain)
+			}
+		}
+	})
 }
 
 // TestEdgeCases covers edge behaviors for WithAttrs and WithGroup.
