@@ -10,15 +10,15 @@ import (
 	"github.com/voler88/conslog"
 )
 
-// Level defines a custom log level type based on [slog.Level].
-type Level slog.Level
+// Level is an alias for [slog.Level], representing log severity levels.
+type Level = slog.Level
 
 // Log level constants matching slog's predefined levels.
 const (
-	LevelError = Level(slog.LevelError)
-	LevelWarn  = Level(slog.LevelWarn)
-	LevelInfo  = Level(slog.LevelInfo)
-	LevelDebug = Level(slog.LevelDebug)
+	LevelError = slog.LevelError
+	LevelWarn  = slog.LevelWarn
+	LevelInfo  = slog.LevelInfo
+	LevelDebug = slog.LevelDebug
 )
 
 // HandlerType represents the type of log output handler.
@@ -73,10 +73,9 @@ func New(out io.Writer, handler HandlerType) *Logger {
 	return &Logger{slog.New(h), lvl}
 }
 
-// SetLevel sets the log level dynamically using a custom [Level] type.
-// It converts the custom [Level] to [slog.Level] before setting.
+// SetLevel sets the log level dynamically.
 func (l *Logger) SetLevel(level Level) {
-	l.Level.Set(slog.Level(level))
+	l.Level.Set(level)
 }
 
 // SetLevelByCounter sets the log level based on an integer counter.
