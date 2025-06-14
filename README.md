@@ -1,46 +1,54 @@
 # Conslog
 
-This Go package provides a customizable logger based on Go's standard
-[`slog`](https://pkg.go.dev/log/slog) package. It supports two output modes:
-
-- **JSON Output:** Uses the built-in `slog.JSONHandler` for structured log output.
-- **Console Output:** Uses a colorized, pretty-printed output via a custom `ConsoleHandler`.
-  Ideal for human-friendly logging during development.
-
-## Features
-
-- **Log Levels:**  
-  Controls verbosity using log levels in each logger (ERROR, WARN, INFO, DEBUG).
-  You can configure the logger's verbosity by setting a level counter.
-  
-- **Custom Handlers:**  
-  Depending on the provided handler type (`"default"` or `"console"`),
-  the logger either outputs JSON or pretty, colored log messages.
-  
-- **Structured Logging:**  
-  Support for structured key/value logging that can be extended with
-  additional context or grouped attributes.
-  
-- **Colorized Console Output:**  
-  The `ConsoleHandler` formats time, level, and messages with ANSI color codes.
-  Attributes and groups are printed with an appropriate indentation level,
-  their contents prints as pretty JSON.
-
-## ConsoleHandler screenshot
+**Conslog** is a high-performance, structured logging package for Go, built as
+a customizable extension of Go's standard [`slog`](https://pkg.go.dev/log/slog) package.
+It provides flexible output modes including colorized, pretty-printed console logs
+and JSON structured logs, optimized for both development and production environments.
 
 ![screenshot](assets/console_handler.png)
 
+- **Colorized Console Output**  
+  Human-friendly, colorized logs with ANSI escape codes for easy reading
+  during development. Supports pretty-printed JSON for complex values and
+  nested attribute groups with indentation.
+
+- **Thread-Safe Logging**  
+  Uses mutex locking to ensure safe concurrent writes to output streams.
+
+- **Efficient Resource Management**  
+  Utilizes pooled buffers and JSON encoders to minimize memory allocations
+  and maximize performance.
+
+## Bencnhmarks
+
+```text
+cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz
+BenchmarkLoggingJSON/LargeMap-4             3896  312151 ns/op  14097 B/op  210 allocs/op
+BenchmarkLoggingJSON/LargeMap-4             3463  309198 ns/op  14079 B/op  210 allocs/op
+BenchmarkLoggingText/LargeMap-4             2606  420866 ns/op  11796 B/op  205 allocs/op
+BenchmarkLoggingText/LargeMap-4             2734  421919 ns/op  11828 B/op  205 allocs/op
+BenchmarkLoggingConsole/LargeMap-4          2356  486875 ns/op  29116 B/op  236 allocs/op
+BenchmarkLoggingConsole/LargeMap-4          2395  487485 ns/op  29461 B/op  237 allocs/op
+BenchmarkLoggingJSON/SingleKeyValue-4     127958    9170 ns/op    522 B/op    0 allocs/op
+BenchmarkLoggingJSON/SingleKeyValue-4     130000    9090 ns/op    525 B/op    1 allocs/op
+BenchmarkLoggingText/SingleKeyValue-4     126709    9261 ns/op    524 B/op    1 allocs/op
+BenchmarkLoggingText/SingleKeyValue-4     128955    9213 ns/op    524 B/op    1 allocs/op
+BenchmarkLoggingConsole/SingleKeyValue-4  115184   10089 ns/op    192 B/op    4 allocs/op
+BenchmarkLoggingConsole/SingleKeyValue-4  117764   10069 ns/op    192 B/op    4 allocs/op
+```
+
 ## Installation
 
-To use this package in your project, simply install it using Go modules. For example:
+Use Go modules to install:
 
 ```bash
-go get github.com/voler88/logging
+go get github.com/voler88/conslog
 ```
 
 ## Usage
 
-Below is a basic example of how to create and use the logger:
+Below is a simple example demonstrating how to create and use a console logger
+with `conslog`:
 
 ```go
 package main
@@ -48,45 +56,43 @@ package main
 import (
     "os"
 
-    "github.com/voler88/logging"
+    "github.com/voler88/conslog"
+    "log/slog"
 )
 
 func main() {
-    // Create a new logger that writes to stdout.
-    // Use "default" for JSON logging or "console" for pretty console output.
-    logger := logging.New(os.Stdout, "console")
+    // Create a new ConsoleHandler that writes to stdout with default options.
+    handler := conslog.NewConsoleHandler(os.Stdout, nil)
 
-    // Set the desired verbosity level (0=ERROR, 1=WARN, 2=INFO, 3 or higher=DEBUG).
-    if err := logger.SetLevel(logging.LevelDebug); err != nil {
-        panic(err)
-    }
+    // Create a new slog.Logger using the ConsoleHandler.
+    logger := slog.New(handler)
 
-    // Log messages at various levels.
-    logger.Error("An error occurred", "code", 123)
-    logger.Warn("This is a warning", "file", "server.go")
-    logger.Info("Server started", "port", 8080)
-    logger.Debug("Debug info", "config", map[string]string{"env": "dev"})
+    // Log messages with various levels and structured attributes.
+    logger.Info("Server started", slog.String("port", "8080"))
+    logger.Debug("Debugging enabled", slog.String("config", "dev"))
+    logger.Warn("Cache miss", slog.Int("items", 5))
+    logger.Error("Failed to connect", slog.String("db", "users"))
 }
 ```
 
+Also see [examples/logging](examples/logging) for slog.Logger wrapper
+implementation for easy integration.
+
 ## Testing
 
-Unit tests are provided in the package and can be run using:
+Run unit tests and benchmarks with:
 
 ```bash
 go test ./...
 go test -bench=. ./...
 ```
 
-Tests cover:
-
-- Handler selection and output format.
-- Log level filtering via `SetLevel`.
-- Benchmark for default (JSON) and Console handlers.
+Tests cover handler behavior, log level filtering, and performance benchmarks.
 
 ## Contributing
 
-Feel free to open issues or pull requests if you have improvements or bug fixes.
+Contributions, issues, and feature requests are welcome! Please open an issue
+or submit a pull request.
 
 ## License
 
