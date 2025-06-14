@@ -19,7 +19,7 @@ and JSON structured logs, optimized for both development and production environm
   Utilizes pooled buffers and JSON encoders to minimize memory allocations
   and maximize performance.
 
-## Bencnhmarks
+## Benchmarks
 
 ```text
 cpu: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz
