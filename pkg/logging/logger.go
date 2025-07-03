@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/voler88/conslog"
@@ -81,7 +82,7 @@ func NewLogger(out io.Writer, handler HandlerType) Logger {
 	case JSON:
 		h = slog.NewJSONHandler(out, opts)
 	default:
-		fmt.Fprintf(out, "warning: invalid handler type %q, falling back to JSON\n", handler)
+		fmt.Fprintf(os.Stderr, "warning: invalid handler type %q, falling back to JSON\n", handler)
 		h = slog.NewJSONHandler(out, opts)
 	}
 
