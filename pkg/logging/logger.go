@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -52,6 +53,7 @@ type Logger interface {
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
 
+	Enabled(level Level) bool
 	With(args ...any) Logger
 	WithGroup(name string) Logger
 
@@ -107,6 +109,11 @@ func (l *logger) Warn(msg string, args ...any) {
 // Error logs a message at Error level with optional key-value pairs.
 func (l *logger) Error(msg string, args ...any) {
 	l.logger.Error(msg, args...)
+}
+
+// Enabled checks if level handled by logger.
+func (l *logger) Enabled(level Level) bool {
+	return l.logger.Enabled(context.Background(), level)
 }
 
 // SetLevel sets the log level dynamically.
